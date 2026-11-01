@@ -1,157 +1,320 @@
-# Statistical Analysis and Predictive Modeling using R
+library(palmerpenguins)
+library(tidyverse)
+library(caret)
+library(car)
+library(lmtest)
+library(ggplot2)
 
-Statistical analysis, hypothesis testing and multiple linear regression in R to predict **penguin body mass** from the Palmer Penguins dataset. The project covers data cleaning, exploratory analysis, ANOVA and correlation tests, assumption checks, 5-fold cross-validation, test-set evaluation, model diagnostics and model comparison.
+#import the dataset
+data("penguins")
 
-> Internship project | Data Analytics | Author: **Divya Ahire**
+head(penguins)
+View(penguins)
 
----
+#understand the dataset
+dim(penguins)
 
-## Table of Contents
+str(penguins)
 
-- [Project Overview](#project-overview)
-- [Research Question and Objectives](#research-question-and-objectives)
-- [Dataset](#dataset)
-- [Tools and Technologies](#tools-and-technologies)
-- [Project Structure](#project-structure)
-- [How to Run](#how-to-run)
-- [Methodology](#methodology)
-- [Results](#results)
-- [Model Diagnostics](#model-diagnostics)
-- [Model Comparison](#model-comparison)
-- [Conclusion](#conclusion)
-- [Skills Demonstrated](#skills-demonstrated)
-- [References](#references)
+summary(penguins)
 
----
+colnames(penguins)
 
-## Project Overview
+# data cleaning and preprocessing
+#checking missing value
+colSums(is.na(penguins))
+#check duplicate
+sum(duplicated(penguins))
+#duplicate records
+sum(duplicated(penguins))
+# select the required columns
+penguins_model <- penguins %>%
+  select(
+    species,
+    island,
+    bill_length_mm,
+    bill_depth_mm,
+    flipper_length_mm,
+    body_mass_g,
+    sex
+  )
 
-This project combines statistical inference with predictive modeling. After cleaning and exploring the data, it tests whether body mass differs between species, measures the link between flipper length and body mass, and builds a regression model that is validated on unseen data and checked against its statistical assumptions.
+# Removing missing values
+penguins_clean <- penguins_model %>%
+  drop_na()
 
-## Research Question and Objectives
+#verify cleaned data
+dim(penguins_clean)
 
-**Can we predict a penguin's body mass using its flipper length, bill measurements, species, sex and island?**
+colSums(is.na(penguins_clean))
 
-- Understand the dataset through exploratory statistical analysis
-- Test whether mean body mass differs between species (ANOVA and Tukey HSD)
-- Test the relationship between flipper length and body mass (Pearson correlation)
-- Check normality, equal variance, linearity and multicollinearity
-- Build a multiple linear regression model on an 80/20 train/test split
-- Evaluate with 5-fold cross-validation, test-set RMSE, MAE and R-squared
-- Run diagnostics and compare improved models
+summary(penguins_clean)
 
-## Dataset
+# convert categorical columns into factors
+penguins_clean <- penguins_clean %>%
+  mutate(
+    species = as.factor(species),
+    island = as.factor(island),
+    sex = as.factor(sex)
+  )
 
-[Palmer Penguins](https://allisonhorst.github.io/palmerpenguins/) (`palmerpenguins` R package)
 
-| Item | Detail |
-|---|---|
-| Original size | 344 rows x 8 columns |
-| After cleaning | 333 complete rows (11 incomplete rows removed, 0 duplicates) |
-| Target | `body_mass_g` |
-| Predictors | `flipper_length_mm`, `bill_length_mm`, `bill_depth_mm`, `species`, `sex`, `island` |
+# Exploratory Statistical Analysis (EDA)
 
-## Tools and Technologies
+# statistical summary
+summary(penguins_clean)
 
-| Tool | Purpose |
-|---|---|
-| R, RStudio | Analysis environment |
-| tidyverse (dplyr, tidyr, ggplot2) | Data preparation and plots |
-| caret | Data splitting, cross-validation, evaluation metrics |
-| car | Levene's test, variance inflation factors |
-| lmtest | Breusch-Pagan test |
-| randomForest | Model comparison |
+# calculate mean, median and standard deviation
 
-## Project Structure
+penguins_clean %>%
+  summarise(
+    Mean_Mass = mean(body_mass_g),
+    Median_Mass = median(body_mass_g),
+    SD_Mass = sd(body_mass_g),
+    Min_Mass = min(body_mass_g),
+    Max_Mass = max(body_mass_g)
+  )
 
-```
-.
-├── penguins_analysis.R       # Full R script (cleaning, tests, modeling)
-├── Screenshots/              # RStudio output screenshots
-├── Report/                   # Final project report (Word/PDF)
-└── README.md
-```
+# species wise statistical summary
+penguins_clean %>%
+  group_by(species) %>%
+  summarise(
+    Total = n(),
+    Average_Mass = mean(body_mass_g),
+    Median_Mass = median(body_mass_g),
+    Average_Flipper = mean(flipper_length_mm),
+    .groups = "drop"
+  )
 
-## How to Run
+# create histogram
 
-```r
-install.packages(c("palmerpenguins", "tidyverse", "caret", "car",
-                   "lmtest", "ggplot2", "randomForest"))
-```
+ggplot(penguins_clean,
+       aes(x = body_mass_g)) +
+  geom_histogram(
+    bins = 20,
+    fill = "navy",
+    color = "black"
+  ) +
+  labs(
+    title = "Distribution of Penguin Body Mass",
+    x = "Body Mass (grams)",
+    y = "Frequency"
+  ) +
+  theme_minimal()
 
-```r
-source("penguins_analysis.R")
-```
+# box plot
+ggplot(penguins_clean,
+       aes(x = species,
+           y = body_mass_g,
+           fill = species)) +
+  geom_boxplot() +
+  labs(
+    title = "Body Mass Comparison by Species",
+    x = "Species",
+    y = "Body Mass (grams)"
+  ) +
+  theme_minimal()
 
-A fixed seed (`set.seed(123)`) is used so the train/test split and cross-validation folds are reproducible.
+# scatter plot
 
-## Methodology
+ggplot(penguins_clean,
+       aes(x = flipper_length_mm,
+           y = body_mass_g,
+           color = species)) +
+  geom_point() +
+  geom_smooth(method = "lm",
+              se = FALSE) +
+  labs(
+    title = "Flipper Length vs Body Mass",
+    x = "Flipper Length (mm)",
+    y = "Body Mass (grams)"
+  ) +
+  theme_minimal()
 
-1. **Data cleaning:** checked missing values and duplicates, selected model columns, applied `drop_na()`, converted categorical variables to factors
-2. **Exploratory analysis:** summary statistics, species-wise comparison, histogram, box plot and scatter plot
-3. **Hypothesis testing:** one-way ANOVA with Tukey HSD, and Pearson correlation test
-4. **Assumption checks:** Shapiro-Wilk, Levene's test, correlation matrix, linearity plot, with Welch's ANOVA and Kruskal-Wallis as robustness checks
-5. **Splitting:** 80% training (268 rows) and 20% testing (65 rows) with `createDataPartition()`
-6. **Modeling:** multiple linear regression with `lm()`
-7. **Validation:** 5-fold cross-validation on the training data only
-8. **Evaluation:** RMSE, MAE and R-squared on the held-out test data
-9. **Diagnostics and improvement:** residual plots, VIF, Breusch-Pagan test, reduced model, interaction model and Random Forest
+# Hypothesis testing
 
-## Results
+anova_model <- aov(
+  body_mass_g ~ species,
+  data = penguins_clean
+)
 
-### Hypothesis tests
+summary(anova_model)
 
-| Test | Result | Conclusion |
-|---|---|---|
-| ANOVA (body mass by species) | F(2, 330) = 341.9, p < 2e-16 | Reject H0: mean body mass differs by species |
-| Tukey HSD | Gentoo differs from Adelie (+1,386 g) and Chinstrap (+1,359 g); Adelie vs Chinstrap p = 0.916 | Gentoo is much heavier; Adelie and Chinstrap are similar |
-| Pearson correlation | r = 0.873, 95% CI 0.845-0.896, p < 2.2e-16 | Strong positive relationship |
 
-Levene's test (p = 0.0064) showed unequal variances between species, so the ANOVA result was confirmed with Welch's ANOVA and Kruskal-Wallis (both p < 2.2e-16).
+TukeyHSD(anova_model)
 
-### Model performance
+# Pearson Correlation tes
 
-| Evaluation | RMSE (g) | MAE (g) | R-squared |
-|---|---|---|---|
-| 5-fold cross-validation | 295.04 | 236.36 | 0.8645 |
-| Test dataset (65 penguins) | 294.25 | 238.31 | 0.8835 |
+cor.test(
+  penguins_clean$flipper_length_mm,
+  penguins_clean$body_mass_g,
+  method = "pearson"
+)
 
-The close agreement between cross-validation and test results indicates the model generalizes well. Species, sex, flipper length, bill length and bill depth were significant predictors; island was not.
+# check statistical assumptions
 
-## Model Diagnostics
+numeric_data <- penguins_clean %>%
+  select(
+    bill_length_mm,
+    bill_depth_mm,
+    flipper_length_mm,
+    body_mass_g
+  )
 
-- **Residuals vs fitted / Q-Q / scale-location:** no clear curvature, approximately normal residuals, roughly constant spread
-- **Breusch-Pagan test:** p = 0.097, constant variance not rejected
-- **Multicollinearity:** moderate; species has an adjusted GVIF of 2.81 and the other adjusted values range from 1.39 to 2.68
-- **Influence:** largest Cook's distance is 0.036, so no point is individually influential
+cor(numeric_data)
 
-## Model Comparison
+# check normality
+shapiro.test(
+  residuals(anova_model)
+)
 
-| Model | CV RMSE | Test RMSE | Test R-squared |
-|---|---|---|---|
-| M1 Full model (6 predictors) | 295.0 | 294.3 | 0.883 |
-| M2 Without island | 291.1 | 294.8 | 0.883 |
-| M3 Without island and bill length | 294.2 | 286.8 | 0.889 |
-| M4 With flipper x species interaction | 292.0 | 289.5 | 0.887 |
-| M5 Random Forest | 302.9 | 295.3 | 0.896 |
+# check equal variance for anova
 
-All models perform within about 10 g RMSE of each other. **M2 (without island)** is recommended: it is simpler and has the best cross-validated RMSE. The Random Forest offered no advantage.
+# visualization the relationship
 
-## Conclusion
+plot(
+  penguins_clean$flipper_length_mm,
+  penguins_clean$body_mass_g,
+  main = "Linearity Check",
+  xlab = "Flipper Length",
+  ylab = "Body Mass"
+)
 
-Penguin body mass can be predicted to within roughly 240 g on average (MAE) using a multiple linear regression model that explains about 88% of the variation in unseen data. Species and sex produce the largest shifts in mass, flipper length is the strongest numerical predictor, and island adds no useful information.
+# split the data set into training and testing data
 
-## Skills Demonstrated
+set.seed(123)
 
-- Data cleaning and preprocessing in R
-- Hypothesis testing (ANOVA, Tukey HSD, Pearson correlation)
-- Checking and reporting statistical assumptions
-- Multiple linear regression and interpretation of coefficients
-- Cross-validation, train/test evaluation and model comparison
-- Regression diagnostics (residuals, VIF, Breusch-Pagan, Cook's distance)
+train_index <- createDataPartition(
+  penguins_clean$body_mass_g,
+  p = 0.80,
+  list = FALSE
+)
 
-## References
+train_data <- penguins_clean[
+  train_index, ]
 
-- [Palmer Penguins dataset](https://allisonhorst.github.io/palmerpenguins/)
-- [palmerpenguins R package](https://cran.r-project.org/package=palmerpenguins)
-- [caret](https://topepo.github.io/caret/) | [car](https://cran.r-project.org/package=car) | [lmtest](https://cran.r-project.org/package=lmtest) | [tidyverse](https://www.tidyverse.org/)
+test_data <- penguins_clean[
+  -train_index, ]
+
+dim(train_data)
+
+dim(test_data)
+
+
+# build a mutiple linear regression model
+
+model <- lm(
+  body_mass_g ~
+    flipper_length_mm +
+    bill_length_mm +
+    bill_depth_mm +
+    species +
+    sex +
+    island,
+  data = train_data
+)
+
+summary(model)
+
+
+# apply 5 fold cross validation
+
+set.seed(123)
+
+control <- trainControl(
+  method = "cv",
+  number = 5
+)
+
+cv_model <- train(
+  body_mass_g ~
+    flipper_length_mm +
+    bill_length_mm +
+    bill_depth_mm +
+    species +
+    sex +
+    island,
+  data = train_data,
+  method = "lm",
+  trControl = control,
+  metric = "RMSE"
+)
+
+# predict body mass using the test dataset 
+
+predictions <- predict(
+  model,
+  newdata = test_data
+)
+
+head(predictions)
+
+# compare actual and predicted body mass
+
+comparison <- data.frame(
+  Actual = test_data$body_mass_g,
+  Predicted = predictions
+)
+
+head(comparison, 10)
+
+ggplot(
+  comparison,
+  aes(x = Actual, y = Predicted)
+) +
+  geom_point(color = "blue") +
+  geom_abline(
+    intercept = 0,
+    slope = 1,
+    color = "red"
+  ) +
+  labs(
+    title = "Actual vs Predicted Body Mass",
+    x = "Actual Body Mass (grams)",
+    y = "Predicted Body Mass (grams)"
+  ) +
+  theme_minimal()
+
+print(cv_model)
+
+# evaluate model performance
+
+performance <- postResample(
+  pred = predictions,
+  obs = test_data$body_mass_g
+)
+
+print(performance)
+
+# Model diagnostic analysis
+
+par(mfrow = c(2, 2))
+
+plot(model)
+
+par(mfrow = c(1, 1))
+
+
+# check multicollinearity
+
+car::vif(model)
+
+# check heteroscedasticity
+library(lmtest)
+packageVersion("lmtest")
+
+lmtest::bptest(model)
+
+# improve the model
+
+model2 <- lm(
+  body_mass_g ~
+    flipper_length_mm +
+    species +
+    sex +
+    bill_length_mm +
+    bill_depth_mm,
+  data = train_data
+)
+
+summary(model2)
